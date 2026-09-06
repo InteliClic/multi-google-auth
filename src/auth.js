@@ -1,9 +1,12 @@
 import { google } from "googleapis";
-import { CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SCOPES } from "./config.js";
+import { clientFor, REDIRECT_URI, SCOPES } from "./config.js";
 import { loadToken, saveToken } from "./tokenStore.js";
 
-export function makeOAuthClient() {
-  return new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+// One OAuth2 client per account: normally the shared GOOGLE_CLIENT_ID, but an
+// account can point at its own client via GOOGLE_CLIENT_ID_<KEY> (see config.js).
+export function makeOAuthClient(key) {
+  const { id, secret } = clientFor(key);
+  return new google.auth.OAuth2(id, secret, REDIRECT_URI);
 }
 
 // Build the Google consent URL for an account.
@@ -11,7 +14,7 @@ export function makeOAuthClient() {
 // every time -- without prompt=consent Google omits it on repeat authorizations,
 // which is how accounts end up "connected" but unable to refresh.
 export function authUrl(key, email) {
-  return makeOAuthClient().generateAuthUrl({
+  return makeOAuthClient(key).generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
     include_granted_scopes: true,
@@ -22,7 +25,7 @@ export function authUrl(key, email) {
 }
 
 export async function exchangeCode(key, code) {
-  const c = makeOAuthClient();
+  const c = makeOAuthClient(key);
   const { tokens } = await c.getToken(code);
   c.setCredentials(tokens);
 
@@ -41,7 +44,7 @@ export async function exchangeCode(key, code) {
     tokens.refresh_token = existing.tokens.refresh_token;
   }
 
-  saveToken(key, { authorized_email, saved_at: new Date().toISOString(), tokens });
+  saveToken(key, { authorized_email, client_id: clientFor(key).id, saved_at: new Date().toISOString(), tokens });
   return { authorized_email, tokens };
 }
 
@@ -53,7 +56,7 @@ export function authorizedClient(key) {
     err.code = "NO_TOKEN";
     throw err;
   }
-  const c = makeOAuthClient();
+  const c = makeOAuthClient(key);
   c.setCredentials(stored.tokens);
   c.on("tokens", (t) => {
     const cur = loadToken(key) || { tokens: {} };

@@ -12,6 +12,7 @@ export function startAuthServer() {
       .map((r) => {
         const state = r.live ? "🟢 live" : r.has_token ? "🔴 broken" : "⚪ not connected";
         return `<li style="margin:.5em 0"><b>${r.account}</b> (${r.expected_email}) — ${state}` +
+          ` <small style="color:#888">· ${r.client}</small>` +
           (r.authorized_email ? `<br><small>authorized as ${r.authorized_email}</small>` : "") +
           ` &nbsp; <a href="/auth/${r.account}">authorize / re-authorize</a></li>`;
       })
@@ -52,10 +53,24 @@ export function startAuthServer() {
     }
   });
 
-  return new Promise((resolve) => {
-    const server = app.listen(PORT, () => {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(PORT);
+    server.once("listening", () => {
       console.error(`[auth] server on ${PUBLIC_URL}  (open it to authorize accounts)`);
       resolve(server);
+    });
+    server.once("error", (err) => {
+      // Without this handler a busy port is an *uncaught* exception that kills the
+      // whole process -- e.g. Claude launching the MCP while `npm run auth` runs.
+      if (err.code === "EADDRINUSE") {
+        const e = new Error(
+          `port ${PORT} is already in use -- another multi-google-auth instance is probably serving ${PUBLIC_URL} already. ` +
+            "Open that, or set PORT=<other> / DISABLE_AUTH_SERVER=1."
+        );
+        e.code = "EADDRINUSE";
+        return reject(e);
+      }
+      reject(err);
     });
   });
 }

@@ -1,5 +1,5 @@
 import { gmailFor, calendarFor, driveFor } from "./google.js";
-import { loadAccounts } from "./config.js";
+import { loadAccounts, clientFor } from "./config.js";
 import { hasToken, loadToken } from "./tokenStore.js";
 import { probe } from "./auth.js";
 
@@ -21,16 +21,25 @@ export async function listAccounts({ probe: doProbe = true } = {}) {
   const out = [];
   for (const a of accounts) {
     const stored = loadToken(a.key);
+    const client = clientFor(a.key);
     const row = {
       account: a.key,
       expected_email: a.email,
       has_token: hasToken(a.key),
       authorized_email: stored?.authorized_email || null,
+      client: client.source,
     };
     if (row.has_token && doProbe) {
       const p = await probe(a.key);
       row.live = p.live;
-      if (!p.live) row.note = `Broken (${p.error}). Re-run /auth/${a.key}`;
+      if (!p.live) {
+        // A token issued by one OAuth client cannot be refreshed by another; say so
+        // instead of a bare invalid_grant when the configured client has changed.
+        const otherClient = stored?.client_id && stored.client_id !== client.id;
+        row.note = otherClient
+          ? `Broken: token was issued by a different OAuth client than ${client.source} now points at. Re-run /auth/${a.key}`
+          : `Broken (${p.error}). Re-run /auth/${a.key}`;
+      }
     } else if (!row.has_token) {
       row.live = false;
       row.note = `Not authorized. Run /auth/${a.key}`;

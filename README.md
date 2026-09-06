@@ -73,17 +73,44 @@ In the [Google Cloud Console](https://console.cloud.google.com/):
 
 ### 3. Publish the consent screen to "In production"  ← the durable fix
 
-**APIs & Services → OAuth consent screen**:
+**APIs & Services → OAuth consent screen** (in the current console: **Google Auth Platform →
+Audience**, with the app name under **Branding**):
 
 - User type: **External** is fine.
 - Add the scopes this hub uses: `.../auth/userinfo.email`, `.../auth/gmail.modify`,
   `.../auth/calendar`, `.../auth/drive.readonly`.
 - Click **Publish app** so the **Publishing status = In production**.
+  - If **Publish app** is greyed out with "Your app's OAuth configuration is incomplete", fix the
+    **Branding** page first — usually a red *Missing domain* under **Authorized domains** (add the
+    domain of whatever you put in *Application home page*, or clear that field) — then **Save**.
+  - Don't upload a logo. Google's own note says a logo means you must submit the app for
+    verification once it leaves Testing; a private hub gains nothing from one.
 
 > If you leave it in **Testing**, Google expires every refresh token after **7 days** and
 > you're back to reconnecting weekly. Publishing to production is what stops that. (These
 > are your own accounts on your own project, so you don't need Google's brand verification
 > for it to work — an "unverified app" consent warning you can click through is expected.)
+
+#### Consumer @gmail.com accounts need their own client
+
+Google will not let a consumer **@gmail.com** account grant *restricted* scopes (Gmail
+read/modify, Drive read-only) to an unverified app that is **In production** — the consent
+screen says **"This app is blocked"** with no way through. Google Workspace accounts are fine
+(their org admin governs app access), so keep them on the production project and give each
+consumer account its own client on a project that stays in **Testing**:
+
+1. Signed in **as that Gmail account**, create a new Google Cloud project and enable the
+   Gmail, Calendar, and Drive APIs.
+2. **Google Auth Platform → Branding**: any name, no logo. **Audience**: External, leave it in
+   **Testing**, and add the Gmail address under **Test users**.
+3. **Clients → Create client → Web application**, redirect URI
+   `http://localhost:8790/oauth2callback`.
+4. Put its credentials in `.env` as `GOOGLE_CLIENT_ID_<KEY>` / `GOOGLE_CLIENT_SECRET_<KEY>`
+   (`<KEY>` = the account's `accounts.json` key upper-cased, e.g. `GOOGLE_CLIENT_ID_PERSONAL`).
+5. Restart `npm run auth` and authorize that account.
+
+The Testing rule still applies to *that* account: its refresh token dies after 7 days. The
+status page and `list_accounts` will say so, and re-authorizing is one click.
 
 ### 4. Configure accounts
 
@@ -132,7 +159,13 @@ or in `claude_desktop_config.json`:
 }
 ```
 
-The server reads `.env` from its own folder, so the absolute path is all it needs.
+The server reads `.env` (plus `accounts.json` and `tokens/`) from its own folder, so the absolute
+path is all it needs — it doesn't matter which directory Claude launches it from.
+
+> **Port sharing:** the MCP instance also serves `/auth/<key>` on port 8790 whenever the port is
+> free, and simply skips the web server (tools still work) if `npm run auth` already owns it. If
+> you'd rather the Claude-launched instance never open a port, add `-e DISABLE_AUTH_SERVER=1` (or
+> `"env": { "DISABLE_AUTH_SERVER": "1" }`) and use `npm run auth` for the auth pages.
 
 ## Hosting it remotely (optional)
 
@@ -160,6 +193,10 @@ Run it on a small always-on box instead of your laptop:
 | Symptom | Fix |
 |---|---|
 | `invalid_grant` / `list_accounts` shows **broken** | Re-authorize: visit `/auth/<key>`. |
+| **Error 403: access_denied** — "…has not completed the Google verification process… can only be accessed by developer-approved testers" | The consent screen is in **Testing** and that Google account isn't a test user. Publish to **In production** (step 3). Adding the account under *Audience → Test users* also unblocks it, but the 7-day token expiry still applies. |
+| **This app is blocked** — "tried to access sensitive info… Google blocked this access" (no *Advanced* link) | A consumer **@gmail.com** account trying to grant **restricted** scopes (Gmail read/modify, Drive read-only) to an unverified production app. Google Workspace accounts get through because their org admin governs app access; consumer accounts can't bypass it. Options for that one account: a separate project kept in **Testing** with the account as a test user (7-day token expiry applies; re-authorize from the status page), completing restricted-scope verification (privacy policy, demo video, and a CASA security assessment for Gmail scopes), or leaving that account out. |
+| Accounts authorized while the app was in Testing still die after 7 days | The 7-day clock is stamped on the token when it's issued. After publishing, re-authorize each account once via `/auth/<key>`. |
+| `npm run auth` fails: `port 8790 is already in use` | Another instance (e.g. one Claude launched) is already serving the pages — just open <http://localhost:8790/>. Or set `PORT=<other>`. |
 | It keeps breaking every few days | Your consent screen is still in **Testing**. Publish it to **In production** (step 3). |
 | No `refresh_token` saved | Make sure you're using this hub's auth flow (it forces `prompt=consent`); revoke the app at <https://myaccount.google.com/permissions> and re-authorize. |
 | `redirect_uri_mismatch` | The redirect URI in `.env` must EXACTLY match one on the OAuth client. |
