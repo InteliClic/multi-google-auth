@@ -1,0 +1,6 @@
+[
+  { "key": "aroncorp",   "email": "nick@aroncorp.com",    "label": "Aron Corp" },
+  { "key": "inteliclic", "email": "nick@inteliclic.com",  "label": "InteliClic" },
+  { "key": "personal",   "email": "nickcr@gmail.com",     "label": "Personal" },
+  { "key": "logicall",   "email": "nicholas@logicall.io", "label": "LogiCall" }
+]

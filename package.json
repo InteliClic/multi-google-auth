@@ -1,0 +1,19 @@
+{
+  "name": "multi-google-auth",
+  "version": "1.0.0",
+  "description": "Multi-account Google MCP hub (Gmail/Calendar/Drive) with durable OAuth refresh tokens.",
+  "type": "module",
+  "bin": { "multi-google-auth": "src/index.js" },
+  "scripts": {
+    "start": "node src/index.js",
+    "auth": "node src/index.js --auth-only"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "googleapis": "^144.0.0",
+    "zod": "^3.23.8"
+  }
+}
