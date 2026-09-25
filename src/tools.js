@@ -27,6 +27,7 @@ export async function listAccounts({ probe: doProbe = true } = {}) {
       expected_email: a.email,
       has_token: hasToken(a.key),
       authorized_email: stored?.authorized_email || null,
+      authorized_at: stored?.authorized_at || null,
       client: client.source,
     };
     if (row.has_token && doProbe) {

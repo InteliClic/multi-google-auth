@@ -44,7 +44,10 @@ export async function exchangeCode(key, code) {
     tokens.refresh_token = existing.tokens.refresh_token;
   }
 
-  saveToken(key, { authorized_email, client_id: clientFor(key).id, saved_at: new Date().toISOString(), tokens });
+  // authorized_at marks this consent. Token refreshes keep it (they only move saved_at),
+  // so it is what a Testing-mode client's 7-day clock is measured from.
+  const now = new Date().toISOString();
+  saveToken(key, { authorized_email, client_id: clientFor(key).id, authorized_at: now, saved_at: now, tokens });
   return { authorized_email, tokens };
 }
 
