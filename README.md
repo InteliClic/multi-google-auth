@@ -30,7 +30,7 @@ just "a token file exists."
 
 | Tool | What it does |
 |---|---|
-| `list_accounts` | Lists accounts and **probes** each token: `live` vs `broken` vs `not connected`. |
+| `list_accounts` | Lists accounts and **probes** each token: `live` vs `broken` vs `not connected`, with `authorized_at` (the last consent). |
 | `gmail_search` | Search threads with Gmail query syntax (`from:`, `newer_than:7d`, `has:attachment`…). |
 | `gmail_get_thread` | Full thread with decoded plain-text bodies. |
 | `gmail_create_draft` | Creates a **draft only** — it never sends. |
@@ -110,7 +110,9 @@ consumer account its own client on a project that stays in **Testing**:
 5. Restart `npm run auth` and authorize that account.
 
 The Testing rule still applies to *that* account: its refresh token dies after 7 days. The
-status page and `list_accounts` will say so, and re-authorizing is one click.
+status page and `list_accounts` will say so, and re-authorizing is one click. To renew before
+it dies, measure from `authorized_at`, which only a consent sets: `saved_at` moves on every
+token refresh, so it says nothing about the 7-day clock.
 
 ### 4. Configure accounts
 
