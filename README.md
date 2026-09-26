@@ -114,6 +114,17 @@ status page and `list_accounts` will say so, and re-authorizing is one click. To
 it dies, measure from `authorized_at`, which only a consent sets: `saved_at` moves on every
 token refresh, so it says nothing about the 7-day clock.
 
+#### Gmail that doesn't expire: an app password
+
+A consumer account's **Gmail** can skip OAuth entirely. Turn on 2-Step Verification for it,
+create an app password at <https://myaccount.google.com/apppasswords>, and put it in `.env` as
+`GMAIL_APP_PASSWORD_<KEY>` (spaces as Google shows them are fine). That account's
+`gmail_search`, `gmail_get_thread` and `gmail_create_draft` then go over IMAP
+(`imap.gmail.com`, Gmail's own search syntax via `X-GM-RAW`) and return the same thread and
+message ids as the API. An app password lasts until it is deleted or the Google password
+changes. `list_accounts` reports `gmail: "imap"` and probes that login as `gmail_live`.
+Calendar and Drive still use the OAuth token.
+
 ### 4. Configure accounts
 
 `accounts.json` ships with four accounts. Edit keys/emails to taste:

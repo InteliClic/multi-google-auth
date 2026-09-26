@@ -1,7 +1,8 @@
 import { gmailFor, calendarFor, driveFor } from "./google.js";
-import { loadAccounts, clientFor } from "./config.js";
+import { loadAccounts, clientFor, suffixOf } from "./config.js";
 import { hasToken, loadToken } from "./tokenStore.js";
 import { probe } from "./auth.js";
+import { imapPasswordFor, imapProbe, imapSearch, imapGetThread, imapCreateDraft } from "./gmailImap.js";
 
 export const accounts = loadAccounts();
 export const accountKeys = accounts.map((a) => a.key);
@@ -45,14 +46,23 @@ export async function listAccounts({ probe: doProbe = true } = {}) {
       row.live = false;
       row.note = `Not authorized. Run /auth/${a.key}`;
     }
+    // Gmail for this account goes over IMAP when it has an app password; report that
+    // login too, since the OAuth token above no longer carries its mail.
+    row.gmail = imapPasswordFor(a.key) ? "imap" : "oauth";
+    if (row.gmail === "imap" && doProbe) {
+      const g = await imapProbe(a);
+      row.gmail_live = g.live;
+      if (!g.live) row.gmail_note = `IMAP login failed (${g.error}). Check GMAIL_APP_PASSWORD_${suffixOf(a.key)} in .env`;
+    }
     out.push(row);
   }
   return out;
 }
 
 export async function gmailSearch({ account, query, max_results = 10 }) {
-  accountOr400(account);
+  const a = accountOr400(account);
   const max = Math.min(Math.max(1, max_results), 25);
+  if (imapPasswordFor(account)) return imapSearch(a, query, max);
   const gmail = gmailFor(account);
   const list = await gmail.users.threads.list({ userId: "me", q: query, maxResults: max });
   const threads = list.data.threads || [];
@@ -102,7 +112,8 @@ function decodeBody(payload) {
 }
 
 export async function gmailGetThread({ account, thread_id }) {
-  accountOr400(account);
+  const a = accountOr400(account);
+  if (imapPasswordFor(account)) return imapGetThread(a, thread_id);
   const gmail = gmailFor(account);
   const g = await gmail.users.threads.get({ userId: "me", id: thread_id, format: "full" });
   const messages = (g.data.messages || []).map((m) => {
@@ -123,7 +134,8 @@ export async function gmailGetThread({ account, thread_id }) {
 }
 
 export async function gmailCreateDraft({ account, to, subject, body, cc, bcc, thread_id }) {
-  accountOr400(account);
+  const a = accountOr400(account);
+  if (imapPasswordFor(account)) return imapCreateDraft(a, { to, subject, body, cc, bcc, thread_id });
   const gmail = gmailFor(account);
   const lines = [`To: ${to}`];
   if (cc) lines.push(`Cc: ${cc}`);
