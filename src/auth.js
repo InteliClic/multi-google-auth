@@ -74,10 +74,13 @@ export function authorizedClient(key) {
 
 // Actively test whether the stored refresh token still works. This is what makes
 // list_accounts honest: a token file can exist while Google has revoked/expired
-// the grant. getAccessToken() forces a refresh and surfaces invalid_grant.
+// the grant. getAccessToken() alone returns a cached access token while it is
+// still valid (up to an hour), so drop it first: only a real refresh can surface
+// invalid_grant.
 export async function probe(key) {
   try {
     const c = authorizedClient(key);
+    c.setCredentials({ refresh_token: c.credentials.refresh_token });
     const res = await c.getAccessToken();
     return { live: !!res.token };
   } catch (e) {
