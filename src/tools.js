@@ -1,5 +1,5 @@
 import { gmailFor, calendarFor, driveFor } from "./google.js";
-import { loadAccounts, clientFor, suffixOf } from "./config.js";
+import { loadAccounts, clientFor, suffixOf, scopesFor } from "./config.js";
 import { hasToken, loadToken } from "./tokenStore.js";
 import { probe } from "./auth.js";
 import { imapPasswordFor, imapProbe, imapSearch, imapGetThread, imapCreateDraft } from "./gmailImap.js";
@@ -55,10 +55,13 @@ export async function listAccounts({ probe: doProbe = true } = {}) {
       row.gmail_live = g.live;
       if (!g.live) row.gmail_note = `IMAP login failed (${g.error}). Check GMAIL_APP_PASSWORD_${suffixOf(a.key)} in .env`;
     }
-    // Scopes asked for in accounts.json that the stored grant does not carry yet.
-    if (a.extra_scopes.length) {
-      const granted = (stored?.tokens?.scope || "").split(/\s+/);
-      row.extra_scopes_missing = a.extra_scopes.filter((s) => !granted.includes(s));
+    if (row.has_token) {
+      // Scopes the account asks for that the stored grant does not carry yet.
+      const granted = (stored.tokens.scope || "").split(/\s+/);
+      const missing = scopesFor(a.key).filter((s) => !granted.includes(s));
+      if (missing.length) row.scopes_missing = missing;
+      // Google puts refresh_token_expires_in on grants from a Testing client: 7 days.
+      row.expires_weekly = !!stored.tokens.refresh_token_expires_in;
     }
     out.push(row);
   }

@@ -38,10 +38,11 @@ just "a token file exists."
 | `calendar_create_event` | Create an event (timed or all-day). |
 | `drive_search` | Full-text or raw-query Drive search. |
 | `drive_read_file` | Read a file's text (Docs/Sheets/Slides exported to text/CSV). |
-| `assistant_command` | Sends a text command to **Google Assistant** as the account, the same as saying it to a Google speaker ("3D Printer off"). It acts on real devices. Only for an account whose `extra_scopes` include the Assistant scope (see *Google Assistant* below). |
+| `assistant_command` | Sends a text command to **Google Assistant** as the account, the same as saying it to a Google speaker ("3D Printer off"). It acts on real devices. Only for an account whose `scopes` include the Assistant scope (see *Google Assistant* below). |
 
 All tools take an `account` argument — one of the keys in `accounts.json`
-(`aroncorp`, `inteliclic`, `personal`, `logicall`).
+(`aroncorp`, `inteliclic`, `personal`, `personal-drive`, `logicall`). A tool asked of a key
+without that API says which key has it.
 
 ## Prerequisites
 
@@ -92,28 +93,36 @@ Audience**, with the app name under **Branding**):
 > are your own accounts on your own project, so you don't need Google's brand verification
 > for it to work — an "unverified app" consent warning you can click through is expected.)
 
-#### Consumer @gmail.com accounts need their own client
+#### Consumer @gmail.com accounts: split the restricted scopes off
 
 Google will not let a consumer **@gmail.com** account grant *restricted* scopes (Gmail
 read/modify, Drive read-only) to an unverified app that is **In production** — the consent
 screen says **"This app is blocked"** with no way through. Google Workspace accounts are fine
-(their org admin governs app access), so keep them on the production project and give each
-consumer account its own client on a project that stays in **Testing**:
+(their org admin governs app access). *Sensitive* scopes such as Calendar and the Assistant are
+allowed after an "unverified app" warning.
 
-1. Signed in **as that Gmail account**, create a new Google Cloud project and enable the
-   Gmail, Calendar, and Drive APIs.
-2. **Google Auth Platform → Branding**: any name, no logo. **Audience**: External, leave it in
-   **Testing**, and add the Gmail address under **Test users**.
-3. **Clients → Create client → Web application**, redirect URI
-   `http://localhost:8790/oauth2callback`.
-4. Put its credentials in `.env` as `GOOGLE_CLIENT_ID_<KEY>` / `GOOGLE_CLIENT_SECRET_<KEY>`
-   (`<KEY>` = the account's `accounts.json` key upper-cased, e.g. `GOOGLE_CLIENT_ID_PERSONAL`).
-5. Restart `npm run auth` and authorize that account.
+So a consumer account is split into two keys with their own `scopes` (see *Configure
+accounts*):
 
-The Testing rule still applies to *that* account: its refresh token dies after 7 days. The
-status page and `list_accounts` will say so, and re-authorizing is one click. To renew before
-it dies, measure from `authorized_at`, which only a consent sets: `saved_at` moves on every
-token refresh, so it says nothing about the 7-day clock.
+- **One key without Gmail or Drive** (here `personal`: Calendar and the Assistant) uses the
+  production client like the Workspace accounts. Its token **does not expire**. Its Gmail goes
+  over IMAP with an app password (below).
+- **One key for Drive only** (here `personal-drive`) uses its own client on a project that
+  stays in **Testing**:
+  1. Create a Google Cloud project and enable the Google Drive API.
+  2. **Google Auth Platform → Branding**: any name, no logo. **Audience**: External, leave it
+     in **Testing**, and add the Gmail address under **Test users**.
+  3. **Clients → Create client → Web application**, redirect URI
+     `http://localhost:8790/oauth2callback`.
+  4. Put its credentials in `.env` as `GOOGLE_CLIENT_ID_<KEY>` / `GOOGLE_CLIENT_SECRET_<KEY>`
+     (`<KEY>` = the key upper-cased, non-alphanumerics as `_`, e.g.
+     `GOOGLE_CLIENT_ID_PERSONAL_DRIVE`).
+  5. Restart `npm run auth` and authorize that key.
+
+  The Testing rule applies to that key: its refresh token dies after 7 days. Re-authorize it
+  when Drive is needed. `list_accounts` reports `expires_weekly: true` for a grant like this
+  (Google puts `refresh_token_expires_in` on it), and `authorized_at`, which only a consent
+  sets, is where the 7 days start.
 
 #### Gmail that doesn't expire: an app password
 
@@ -124,24 +133,30 @@ create an app password at <https://myaccount.google.com/apppasswords>, and put i
 (`imap.gmail.com`, Gmail's own search syntax via `X-GM-RAW`) and return the same thread and
 message ids as the API. An app password lasts until it is deleted or the Google password
 changes. `list_accounts` reports `gmail: "imap"` and probes that login as `gmail_live`.
-Calendar and Drive still use the OAuth token.
+Calendar and Drive still use OAuth.
 
 ### 4. Configure accounts
 
-`accounts.json` ships with four accounts. Edit keys/emails to taste:
+`accounts.json` ships with these keys. Edit keys/emails to taste:
 
 ```json
 [
   { "key": "aroncorp",   "email": "nick@aroncorp.com",    "label": "Aron Corp" },
   { "key": "inteliclic", "email": "nick@inteliclic.com",  "label": "InteliClic" },
   { "key": "personal",   "email": "nickcr@gmail.com",     "label": "Personal",
-    "extra_scopes": ["https://www.googleapis.com/auth/assistant-sdk-prototype"] },
+    "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
+               "https://www.googleapis.com/auth/calendar",
+               "https://www.googleapis.com/auth/assistant-sdk-prototype"] },
+  { "key": "personal-drive", "email": "nickcr@gmail.com", "label": "Personal Drive",
+    "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
+               "https://www.googleapis.com/auth/drive.readonly"] },
   { "key": "logicall",   "email": "nicholas@logicall.io", "label": "LogiCall" }
 ]
 ```
 
-`extra_scopes` is optional: scopes that one account asks for on top of the shared list.
-`list_accounts` reports any the stored grant doesn't carry yet as `extra_scopes_missing`.
+`scopes` is optional: an account's full scope list in place of the shared one (`SCOPES` in
+`src/config.js`). `list_accounts` reports any the stored grant doesn't carry as
+`scopes_missing`.
 
 #### Google Assistant (`assistant_command`)
 
@@ -152,7 +167,7 @@ Google speaker on that account works as text. To turn it on for an account:
 1. In the Cloud project that owns **that account's** OAuth client, enable the **Google
    Assistant API**.
 2. Add `https://www.googleapis.com/auth/assistant-sdk-prototype` to the account's
-   `extra_scopes`.
+   `scopes`.
 3. Re-authorize the account (`/auth/<key>`) so the grant carries the new scope.
 
 Replies to device commands mostly come back as audio only, with `reply_text` empty; pass

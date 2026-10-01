@@ -114,7 +114,7 @@ export function assistantScopeGranted(key) {
 export async function assistantText(key, text, { language = "en-US", audioPath } = {}) {
   if (!assistantScopeGranted(key)) {
     throw new Error(
-      `Account "${key}" has not granted the Google Assistant scope. Give it extra_scopes in accounts.json and re-run /auth/${key}`
+      `Account "${key}" has not granted the Google Assistant scope. Add it to the account's scopes in accounts.json and re-run /auth/${key}`
     );
   }
   const { token } = await authorizedClient(key).getAccessToken();
