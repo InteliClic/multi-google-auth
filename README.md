@@ -38,6 +38,7 @@ just "a token file exists."
 | `calendar_create_event` | Create an event (timed or all-day). |
 | `drive_search` | Full-text or raw-query Drive search. |
 | `drive_read_file` | Read a file's text (Docs/Sheets/Slides exported to text/CSV). |
+| `assistant_command` | Sends a text command to **Google Assistant** as the account, the same as saying it to a Google speaker ("3D Printer off"). It acts on real devices. Only for an account whose `extra_scopes` include the Assistant scope (see *Google Assistant* below). |
 
 All tools take an `account` argument — one of the keys in `accounts.json`
 (`aroncorp`, `inteliclic`, `personal`, `logicall`).
@@ -133,10 +134,29 @@ Calendar and Drive still use the OAuth token.
 [
   { "key": "aroncorp",   "email": "nick@aroncorp.com",    "label": "Aron Corp" },
   { "key": "inteliclic", "email": "nick@inteliclic.com",  "label": "InteliClic" },
-  { "key": "personal",   "email": "nickcr@gmail.com",     "label": "Personal" },
+  { "key": "personal",   "email": "nickcr@gmail.com",     "label": "Personal",
+    "extra_scopes": ["https://www.googleapis.com/auth/assistant-sdk-prototype"] },
   { "key": "logicall",   "email": "nicholas@logicall.io", "label": "LogiCall" }
 ]
 ```
+
+`extra_scopes` is optional: scopes that one account asks for on top of the shared list.
+`list_accounts` reports any the stored grant doesn't carry yet as `extra_scopes_missing`.
+
+#### Google Assistant (`assistant_command`)
+
+The tool calls the Google Assistant API (`embeddedassistant.googleapis.com`, gRPC v1alpha2) the
+way Home Assistant's *Google Assistant SDK* integration does, so anything you can say to a
+Google speaker on that account works as text. To turn it on for an account:
+
+1. In the Cloud project that owns **that account's** OAuth client, enable the **Google
+   Assistant API**.
+2. Add `https://www.googleapis.com/auth/assistant-sdk-prototype` to the account's
+   `extra_scopes`.
+3. Re-authorize the account (`/auth/<key>`) so the grant carries the new scope.
+
+Replies to device commands mostly come back as audio only, with `reply_text` empty; pass
+`audio_path` to keep the MP3. Confirm what the command did some other way.
 
 ### 5. Authorize each account
 

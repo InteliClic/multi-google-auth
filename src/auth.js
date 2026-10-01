@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import { clientFor, REDIRECT_URI, SCOPES } from "./config.js";
+import { clientFor, REDIRECT_URI, scopesFor } from "./config.js";
 import { loadToken, saveToken } from "./tokenStore.js";
 
 // One OAuth2 client per account: normally the shared GOOGLE_CLIENT_ID, but an
@@ -18,7 +18,7 @@ export function authUrl(key, email) {
     access_type: "offline",
     prompt: "consent",
     include_granted_scopes: true,
-    scope: SCOPES,
+    scope: scopesFor(key),
     state: key,
     login_hint: email || undefined,
   });

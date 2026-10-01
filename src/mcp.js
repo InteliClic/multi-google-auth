@@ -103,6 +103,18 @@ export async function startMcp() {
     wrap(T.driveReadFile)
   );
 
+  server.tool(
+    "assistant_command",
+    "Send a text command to Google Assistant as the account, exactly like saying it to a Google speaker (e.g. \"3D Printer off\"). It ACTS on real devices in that account's Google Home, so confirm with the user first. Needs the account's extra_scopes to include the Assistant scope (personal only). Device commands usually come back as audio with reply_text empty: verify the effect another way.",
+    {
+      account: accountEnum,
+      text: z.string(),
+      language_code: z.string().optional().describe("Default en-US."),
+      audio_path: z.string().optional().describe("Write the spoken reply (MP3) to this file."),
+    },
+    wrap(T.assistantCommand)
+  );
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("[mcp] multi-google-auth ready on stdio");
