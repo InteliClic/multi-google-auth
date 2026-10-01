@@ -41,7 +41,7 @@ just "a token file exists."
 | `assistant_command` | Sends a text command to **Google Assistant** as the account, the same as saying it to a Google speaker ("3D Printer off"). It acts on real devices. Only for an account whose `scopes` include the Assistant scope (see *Google Assistant* below). |
 
 All tools take an `account` argument — one of the keys in `accounts.json`
-(`aroncorp`, `inteliclic`, `personal`, `personal-drive`, `logicall`). A tool asked of a key
+(`aroncorp`, `inteliclic`, `personal`, `personal-drive`, `assistant`, `logicall`). A tool asked of a key
 without that API says which key has it.
 
 ## Prerequisites
@@ -119,14 +119,17 @@ The Testing rule applies: each grant's refresh token dies 7 days after its appro
 `refresh_token_expires_in` on it), and `authorized_at`, which only a consent sets, is where the
 7 days start.
 
-This hub splits nickcr@gmail.com into two keys on that one Testing client, each with its own
-`scopes` (see *Configure accounts*), so that only the one in daily use needs the weekly click:
+This hub splits nickcr@gmail.com into three keys, each with its own `scopes` (see *Configure
+accounts*), so that only Calendar needs the weekly click:
 
-- **`personal`**: Calendar and the Assistant, re-approved weekly. Its Gmail goes over IMAP
+- **`personal`**: Calendar, on the Testing client, re-approved weekly. Its Gmail goes over IMAP
   (below). `.env`: `GOOGLE_CLIENT_ID_PERSONAL` / `GOOGLE_CLIENT_SECRET_PERSONAL`.
-- **`personal-drive`**: Drive only, re-approved when Drive is needed; its lapsing costs nothing
-  day to day. `.env`: `GOOGLE_CLIENT_ID_PERSONAL_DRIVE` / `GOOGLE_CLIENT_SECRET_PERSONAL_DRIVE`,
-  the same values.
+- **`personal-drive`**: Drive only, on the Testing client, re-approved when Drive is needed;
+  its lapsing costs nothing day to day. `.env`: `GOOGLE_CLIENT_ID_PERSONAL_DRIVE` /
+  `GOOGLE_CLIENT_SECRET_PERSONAL_DRIVE`, the same values.
+- **`assistant`**: the Assistant only, on the **production** client (no `.env` override), which
+  Google allows for this scope alone, so it **does not expire**. `assistant_command` on
+  `personal` goes through it.
 
 #### Gmail that doesn't expire: an app password
 
@@ -149,11 +152,13 @@ Calendar and Drive still use OAuth.
   { "key": "inteliclic", "email": "nick@inteliclic.com",  "label": "InteliClic" },
   { "key": "personal",   "email": "nickcr@gmail.com",     "label": "Personal",
     "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
-               "https://www.googleapis.com/auth/calendar",
-               "https://www.googleapis.com/auth/assistant-sdk-prototype"] },
+               "https://www.googleapis.com/auth/calendar"] },
   { "key": "personal-drive", "email": "nickcr@gmail.com", "label": "Personal Drive",
     "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
                "https://www.googleapis.com/auth/drive.readonly"] },
+  { "key": "assistant",  "email": "nickcr@gmail.com",     "label": "Personal Assistant",
+    "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
+               "https://www.googleapis.com/auth/assistant-sdk-prototype"] },
   { "key": "logicall",   "email": "nicholas@logicall.io", "label": "LogiCall" }
 ]
 ```
@@ -168,14 +173,18 @@ The tool calls the Google Assistant API (`embeddedassistant.googleapis.com`, gRP
 way Home Assistant's *Google Assistant SDK* integration does, so anything you can say to a
 Google speaker on that account works as text. To turn it on for an account:
 
-1. In the Cloud project that owns **that account's** OAuth client, enable the **Google
+1. In the Cloud project that owns **that key's** OAuth client, enable the **Google
    Assistant API**.
-2. Add `https://www.googleapis.com/auth/assistant-sdk-prototype` to the account's
-   `scopes`.
-3. Re-authorize the account (`/auth/<key>`) so the grant carries the new scope.
+2. Add `https://www.googleapis.com/auth/assistant-sdk-prototype` to the key's `scopes` (or
+   give the account a key of its own with only that scope, like `assistant`; a call on any
+   key of the same email goes there).
+3. Authorize the key (`/auth/<key>`) so the grant carries the scope.
 
-Replies to device commands mostly come back as audio only, with `reply_text` empty; pass
-`audio_path` to keep the MP3. Confirm what the command did some other way.
+Use Google's own device names: Google calls it "3 D Printer", and "3D Printer off" goes
+unanswered while "turn off 3 D Printer" works. The reply text arrives in `screen_text`
+(`reply_text` stays empty); a reply with no `screen_text` usually means Google did not act,
+and its audio (pass `audio_path`) says why, e.g. "Sorry, I didn't understand". Confirm what a
+command did some other way.
 
 ### 5. Authorize each account
 

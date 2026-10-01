@@ -3,10 +3,12 @@
   { "key": "inteliclic", "email": "nick@inteliclic.com",  "label": "InteliClic" },
   { "key": "personal",   "email": "nickcr@gmail.com",     "label": "Personal",
     "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
-               "https://www.googleapis.com/auth/calendar",
-               "https://www.googleapis.com/auth/assistant-sdk-prototype"] },
+               "https://www.googleapis.com/auth/calendar"] },
   { "key": "personal-drive", "email": "nickcr@gmail.com", "label": "Personal Drive",
     "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
                "https://www.googleapis.com/auth/drive.readonly"] },
+  { "key": "assistant",  "email": "nickcr@gmail.com",     "label": "Personal Assistant",
+    "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
+               "https://www.googleapis.com/auth/assistant-sdk-prototype"] },
   { "key": "logicall",   "email": "nicholas@logicall.io", "label": "LogiCall" }
 ]

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import http2 from "node:http2";
 import { authorizedClient } from "./auth.js";
+import { loadAccounts, scopesFor } from "./config.js";
 import { loadToken } from "./tokenStore.js";
 
 // Google Assistant API (embeddedassistant.googleapis.com, v1alpha2): one text query, as if
@@ -111,7 +112,24 @@ export function assistantScopeGranted(key) {
   return scope.split(/\s+/).includes(ASSISTANT_SCOPE);
 }
 
-export async function assistantText(key, text, { language = "en-US", audioPath } = {}) {
+// The Assistant can sit on its own key for the same Google account: nickcr@gmail.com's
+// `assistant` key is on the production client, which Google allows for this scope alone,
+// so it never expires. A call on another key of that account goes there.
+// Prefer a key set up for the Assistant whose grant carries it; until that key is approved,
+// any key of the account whose grant still carries the scope will do.
+function assistantKey(asked) {
+  const all = loadAccounts();
+  const me = all.find((a) => a.key === asked);
+  const same = all.filter((a) => a.email === me?.email);
+  const pick =
+    same.find((a) => scopesFor(a.key).includes(ASSISTANT_SCOPE) && assistantScopeGranted(a.key)) ||
+    (assistantScopeGranted(asked) ? me : null) ||
+    same.find((a) => assistantScopeGranted(a.key));
+  return pick ? pick.key : asked;
+}
+
+export async function assistantText(asked, text, { language = "en-US", audioPath } = {}) {
+  const key = assistantKey(asked);
   if (!assistantScopeGranted(key)) {
     throw new Error(
       `Account "${key}" has not granted the Google Assistant scope. Add it to the account's scopes in accounts.json and re-run /auth/${key}`
@@ -179,7 +197,8 @@ export async function assistantText(key, text, { language = "en-US", audioPath }
       const mp3 = Buffer.concat(audio);
       if (audioPath && mp3.length) fs.writeFileSync(audioPath, mp3);
       resolve({
-        account: key,
+        account: asked,
+        via: key !== asked ? key : undefined,
         query: text,
         reply_text: display.join(" ").trim() || null,
         screen_text: html.length ? htmlToText(html.join("")).slice(0, 2000) : null,
