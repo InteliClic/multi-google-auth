@@ -105,7 +105,7 @@ export async function startMcp() {
 
   server.tool(
     "assistant_command",
-    "Send a text command to Google Assistant as the account, exactly like saying it to a Google speaker (e.g. \"3D Printer off\"). It ACTS on real devices in that account's Google Home, so confirm with the user first. Needs the account's extra_scopes to include the Assistant scope (personal only). Device commands usually come back as audio with reply_text empty: verify the effect another way.",
+    "Send a text command to Google Assistant as the account, exactly like saying it to a Google speaker (e.g. \"turn off 3 D Printer\"). It ACTS on real devices in that account's Google Home, so confirm with the user first. Use Google's own device names (\"3 D Printer\" has a space; \"3D Printer off\" goes unanswered). Works on any key of an account that has an Assistant key (personal goes through assistant). A reply with no screen_text is usually a command Google did not act on: verify the effect another way.",
     {
       account: accountEnum,
       text: z.string(),
