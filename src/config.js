@@ -45,9 +45,9 @@ export const TOKENS_DIR = process.env.TOKENS_DIR
   : path.join(ROOT, "tokens");
 
 // scopes: an account's own full scope list in place of SCOPES. A consumer @gmail.com
-// account splits in two this way: one key without the restricted Gmail/Drive scopes,
-// which can sit on the production client and never expires, and one key with Drive on
-// a Testing client, which expires every 7 days.
+// account splits in two this way on its Testing client (Google blocks it from Calendar,
+// Gmail and Drive on the unverified production app): one key for daily use (Calendar,
+// the Assistant), renewed weekly, and one key for Drive, renewed only when needed.
 export function loadAccounts() {
   const raw = JSON.parse(fs.readFileSync(path.join(ROOT, "accounts.json"), "utf8"));
   return raw.map((a) => ({
