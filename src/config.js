@@ -44,21 +44,23 @@ export const TOKENS_DIR = process.env.TOKENS_DIR
   ? path.resolve(process.env.TOKENS_DIR)
   : path.join(ROOT, "tokens");
 
-// extra_scopes: scopes one account asks for on top of SCOPES, e.g. the Google Assistant
-// scope for the account whose Google Home the assistant_command tool drives.
+// scopes: an account's own full scope list in place of SCOPES. A consumer @gmail.com
+// account splits in two this way: one key without the restricted Gmail/Drive scopes,
+// which can sit on the production client and never expires, and one key with Drive on
+// a Testing client, which expires every 7 days.
 export function loadAccounts() {
   const raw = JSON.parse(fs.readFileSync(path.join(ROOT, "accounts.json"), "utf8"));
   return raw.map((a) => ({
     key: a.key,
     email: a.email,
     label: a.label || a.key,
-    extra_scopes: Array.isArray(a.extra_scopes) ? a.extra_scopes : [],
+    scopes: Array.isArray(a.scopes) ? a.scopes : null,
   }));
 }
 
 export function scopesFor(key) {
   const a = loadAccounts().find((x) => x.key === key);
-  return [...SCOPES, ...(a ? a.extra_scopes : [])];
+  return a?.scopes || SCOPES;
 }
 
 export function requireConfig() {

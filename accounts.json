@@ -2,6 +2,11 @@
   { "key": "aroncorp",   "email": "nick@aroncorp.com",    "label": "Aron Corp" },
   { "key": "inteliclic", "email": "nick@inteliclic.com",  "label": "InteliClic" },
   { "key": "personal",   "email": "nickcr@gmail.com",     "label": "Personal",
-    "extra_scopes": ["https://www.googleapis.com/auth/assistant-sdk-prototype"] },
+    "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
+               "https://www.googleapis.com/auth/calendar",
+               "https://www.googleapis.com/auth/assistant-sdk-prototype"] },
+  { "key": "personal-drive", "email": "nickcr@gmail.com", "label": "Personal Drive",
+    "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
+               "https://www.googleapis.com/auth/drive.readonly"] },
   { "key": "logicall",   "email": "nicholas@logicall.io", "label": "LogiCall" }
 ]
