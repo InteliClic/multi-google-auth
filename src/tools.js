@@ -3,6 +3,7 @@ import { loadAccounts, clientFor, suffixOf } from "./config.js";
 import { hasToken, loadToken } from "./tokenStore.js";
 import { probe } from "./auth.js";
 import { imapPasswordFor, imapProbe, imapSearch, imapGetThread, imapCreateDraft } from "./gmailImap.js";
+import { assistantText } from "./assistant.js";
 
 export const accounts = loadAccounts();
 export const accountKeys = accounts.map((a) => a.key);
@@ -53,6 +54,11 @@ export async function listAccounts({ probe: doProbe = true } = {}) {
       const g = await imapProbe(a);
       row.gmail_live = g.live;
       if (!g.live) row.gmail_note = `IMAP login failed (${g.error}). Check GMAIL_APP_PASSWORD_${suffixOf(a.key)} in .env`;
+    }
+    // Scopes asked for in accounts.json that the stored grant does not carry yet.
+    if (a.extra_scopes.length) {
+      const granted = (stored?.tokens?.scope || "").split(/\s+/);
+      row.extra_scopes_missing = a.extra_scopes.filter((s) => !granted.includes(s));
     }
     out.push(row);
   }
@@ -272,4 +278,12 @@ export async function driveReadFile({ account, file_id }) {
     content = content.slice(0, 40000) + "\n…[truncated]";
   }
   return { id: file_id, name: meta.data.name, mimeType: mime, content };
+}
+
+// A text command to Google Assistant as the account, the same as saying it to a Google
+// speaker. It acts on real devices; reply_text is often empty for device commands (the
+// Assistant answers those as audio), so the caller confirms the effect another way.
+export async function assistantCommand({ account, text, language_code, audio_path }) {
+  accountOr400(account);
+  return assistantText(account, text, { language: language_code || "en-US", audioPath: audio_path });
 }
