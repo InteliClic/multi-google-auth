@@ -93,36 +93,40 @@ Audience**, with the app name under **Branding**):
 > are your own accounts on your own project, so you don't need Google's brand verification
 > for it to work — an "unverified app" consent warning you can click through is expected.)
 
-#### Consumer @gmail.com accounts: split the restricted scopes off
+#### Consumer @gmail.com accounts need a Testing client
 
 Google will not let a consumer **@gmail.com** account grant *restricted* scopes (Gmail
 read/modify, Drive read-only) to an unverified app that is **In production** — the consent
 screen says **"This app is blocked"** with no way through. Google Workspace accounts are fine
-(their org admin governs app access). *Sensitive* scopes such as Calendar and the Assistant are
-allowed after an "unverified app" warning.
+(their org admin governs app access). Tested 2026-10-01 with nickcr@gmail.com on this hub's
+production app: **Calendar alone is blocked too**; only the Assistant scope alone gets through.
 
-So a consumer account is split into two keys with their own `scopes` (see *Configure
-accounts*):
+So a consumer account's Calendar and Drive use their own client on a project that stays in
+**Testing**:
 
-- **One key without Gmail or Drive** (here `personal`: Calendar and the Assistant) uses the
-  production client like the Workspace accounts. Its token **does not expire**. Its Gmail goes
-  over IMAP with an app password (below).
-- **One key for Drive only** (here `personal-drive`) uses its own client on a project that
-  stays in **Testing**:
-  1. Create a Google Cloud project and enable the Google Drive API.
-  2. **Google Auth Platform → Branding**: any name, no logo. **Audience**: External, leave it
-     in **Testing**, and add the Gmail address under **Test users**.
-  3. **Clients → Create client → Web application**, redirect URI
-     `http://localhost:8790/oauth2callback`.
-  4. Put its credentials in `.env` as `GOOGLE_CLIENT_ID_<KEY>` / `GOOGLE_CLIENT_SECRET_<KEY>`
-     (`<KEY>` = the key upper-cased, non-alphanumerics as `_`, e.g.
-     `GOOGLE_CLIENT_ID_PERSONAL_DRIVE`).
-  5. Restart `npm run auth` and authorize that key.
+1. Signed in as that Gmail account, create a Google Cloud project and enable the Calendar
+   and Drive APIs (and the Google Assistant API for `assistant_command`).
+2. **Google Auth Platform → Branding**: any name, no logo. **Audience**: External, leave it in
+   **Testing**, and add the Gmail address under **Test users**.
+3. **Clients → Create client → Web application**, redirect URI
+   `http://localhost:8790/oauth2callback`.
+4. Put its credentials in `.env` as `GOOGLE_CLIENT_ID_<KEY>` / `GOOGLE_CLIENT_SECRET_<KEY>`
+   for each key that uses it (`<KEY>` = the key upper-cased, non-alphanumerics as `_`).
+5. Restart `npm run auth` and authorize each key.
 
-  The Testing rule applies to that key: its refresh token dies after 7 days. Re-authorize it
-  when Drive is needed. `list_accounts` reports `expires_weekly: true` for a grant like this
-  (Google puts `refresh_token_expires_in` on it), and `authorized_at`, which only a consent
-  sets, is where the 7 days start.
+The Testing rule applies: each grant's refresh token dies 7 days after its approval.
+`list_accounts` reports `expires_weekly: true` for such a grant (Google puts
+`refresh_token_expires_in` on it), and `authorized_at`, which only a consent sets, is where the
+7 days start.
+
+This hub splits nickcr@gmail.com into two keys on that one Testing client, each with its own
+`scopes` (see *Configure accounts*), so that only the one in daily use needs the weekly click:
+
+- **`personal`**: Calendar and the Assistant, re-approved weekly. Its Gmail goes over IMAP
+  (below). `.env`: `GOOGLE_CLIENT_ID_PERSONAL` / `GOOGLE_CLIENT_SECRET_PERSONAL`.
+- **`personal-drive`**: Drive only, re-approved when Drive is needed; its lapsing costs nothing
+  day to day. `.env`: `GOOGLE_CLIENT_ID_PERSONAL_DRIVE` / `GOOGLE_CLIENT_SECRET_PERSONAL_DRIVE`,
+  the same values.
 
 #### Gmail that doesn't expire: an app password
 
