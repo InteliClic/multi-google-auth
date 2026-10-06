@@ -150,6 +150,7 @@ Calendar and Drive still use OAuth.
 [
   { "key": "aroncorp",   "email": "nick@aroncorp.com",    "label": "Aron Corp" },
   { "key": "inteliclic", "email": "nick@inteliclic.com",  "label": "InteliClic" },
+  { "key": "billing",    "email": "billing@inteliclic.com", "label": "InteliClic Billing" },
   { "key": "personal",   "email": "nickcr@gmail.com",     "label": "Personal",
     "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
                "https://www.googleapis.com/auth/calendar"] },
