@@ -41,7 +41,7 @@ just "a token file exists."
 | `assistant_command` | Sends a text command to **Google Assistant** as the account, the same as saying it to a Google speaker ("3D Printer off"). It acts on real devices. Only for an account whose `scopes` include the Assistant scope (see *Google Assistant* below). |
 
 All tools take an `account` argument — one of the keys in `accounts.json`
-(`aroncorp`, `inteliclic`, `personal`, `personal-drive`, `assistant`, `logicall`). A tool asked of a key
+(`aroncorp`, `inteliclic`, `personal`, `personal-drive`, `assistant`, `printer`, `logicall`). A tool asked of a key
 without that API says which key has it.
 
 ## Prerequisites
@@ -186,6 +186,16 @@ unanswered while "turn off 3 D Printer" works. The reply text arrives in `screen
 (`reply_text` stays empty); a reply with no `screen_text` usually means Google did not act,
 and its audio (pass `audio_path`) says why, e.g. "Sorry, I didn't understand". Confirm what a
 command did some other way.
+
+#### A calendar of the app's own (`printer`)
+
+The `printer` key (nickcr@gmail.com) is for the 3D-printer agent on LABBIT, which calls the
+Calendar API itself with `authorizedClient("printer")` from `src/auth.js`: its only data scope
+is `https://www.googleapis.com/auth/calendar.app.created`, which reaches **only calendars the
+app itself created** (the agent makes a "3D Printer" calendar and writes its messages there as
+events with pop-up reminders), none of the account's other calendars. Google classes that scope
+as non-sensitive, so the consumer account can grant it on the production client (no weekly
+expiry), unlike the full `calendar` scope. The hub's own calendar tools do not use this key.
 
 ### 5. Authorize each account
 

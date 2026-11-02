@@ -11,5 +11,8 @@
   { "key": "assistant",  "email": "nickcr@gmail.com",     "label": "Personal Assistant",
     "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
                "https://www.googleapis.com/auth/assistant-sdk-prototype"] },
+  { "key": "printer",    "email": "nickcr@gmail.com",     "label": "Printer agent (its own calendar)",
+    "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email",
+               "https://www.googleapis.com/auth/calendar.app.created"] },
   { "key": "logicall",   "email": "nicholas@logicall.io", "label": "LogiCall" }
 ]
