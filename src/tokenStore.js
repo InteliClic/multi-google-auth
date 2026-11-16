@@ -1,15 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
-import { TOKENS_DIR } from "./config.js";
+import { tokensDir } from "./config.js";
 
 // Token file shape: { authorized_email, client_id, authorized_at, saved_at, tokens: { <google oauth2 tokens> } }
 // authorized_at = the last consent; saved_at = the last write (every refresh moves it).
 
 function ensureDir() {
-  fs.mkdirSync(TOKENS_DIR, { recursive: true });
+  fs.mkdirSync(tokensDir(), { recursive: true });
 }
 function file(key) {
-  return path.join(TOKENS_DIR, `${key}.json`);
+  return path.join(tokensDir(), `${key}.json`);
 }
 
 export function loadToken(key) {

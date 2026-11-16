@@ -13,13 +13,15 @@ export function makeOAuthClient(key) {
 // access_type=offline + prompt=consent GUARANTEE a refresh_token is returned
 // every time -- without prompt=consent Google omits it on repeat authorizations,
 // which is how accounts end up "connected" but unable to refresh.
-export function authUrl(key, email) {
+// state: the caller passes "<key>.<nonce>" (see oauthState.js); hub mode passes
+// includeGrantedScopes=false so a grant never silently widens to other scopes.
+export function authUrl(key, email, { state = key, includeGrantedScopes = true } = {}) {
   return makeOAuthClient(key).generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    include_granted_scopes: true,
+    include_granted_scopes: includeGrantedScopes,
     scope: scopesFor(key),
-    state: key,
+    state,
     login_hint: email || undefined,
   });
 }

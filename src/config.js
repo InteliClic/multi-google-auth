@@ -44,6 +44,17 @@ export const TOKENS_DIR = process.env.TOKENS_DIR
   ? path.resolve(process.env.TOKENS_DIR)
   : path.join(ROOT, "tokens");
 
+// Hub mode (--http) moves the default token folder under HUB_DATA_DIR when
+// TOKENS_DIR is not set. tokenStore reads tokensDir() on every call, so the
+// override applies even though this module has already been imported.
+let tokensDirOverride = null;
+export function setTokensDir(dir) {
+  tokensDirOverride = dir ? path.resolve(dir) : null;
+}
+export function tokensDir() {
+  return tokensDirOverride || TOKENS_DIR;
+}
+
 // scopes: an account's own full scope list in place of SCOPES. A consumer @gmail.com
 // account splits in two this way on its Testing client (Google blocks it from Calendar,
 // Gmail and Drive on the unverified production app): one key for daily use (Calendar,

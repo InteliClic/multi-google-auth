@@ -19,9 +19,11 @@ function header(headers, name) {
   return f ? f.value : null;
 }
 
-export async function listAccounts({ probe: doProbe = true } = {}) {
+// only: an array of account keys to report (hub mode serves a subset); default all.
+export async function listAccounts({ probe: doProbe = true, only = null } = {}) {
   const out = [];
   for (const a of accounts) {
+    if (only && !only.includes(a.key)) continue;
     const stored = loadToken(a.key);
     const client = clientFor(a.key);
     const row = {
