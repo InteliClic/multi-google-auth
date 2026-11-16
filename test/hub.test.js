@@ -28,6 +28,8 @@ Object.assign(process.env, {
   HUB_ACCOUNTS: "aroncorp,personal",
   HUB_ADMIN_EMAILS: "Admin@Example.com",
   HUB_PORT: "0",
+  HUB_ACCESS_TEAM_DOMAIN: "testteam.cloudflareaccess.com",
+  HUB_ACCESS_AUD: "aud-other,aud-test",
 });
 
 await import("../src/env.js"); // loads only the empty test .env
@@ -40,7 +42,27 @@ const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sd
 const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
 
 const SEED_KEY = "seed-" + crypto.randomBytes(24).toString("base64url");
-const ADMIN = { "Cf-Access-Authenticated-User-Email": "admin@example.com" };
+// A Cloudflare Access stand-in: an RSA key pair made here, its public JWK served
+// through the injected fetcher (no network), and tokens signed with it.
+const ISS = "https://testteam.cloudflareaccess.com";
+const KID = "test-kid-1";
+const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+const otherPair = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+const jwksFetches = [];
+const fetchJwks = async (url) => {
+  jwksFetches.push(url);
+  return { keys: [{ ...publicKey.export({ format: "jwk" }), kid: KID, alg: "RS256", use: "sig" }] };
+};
+function makeToken(claims = {}, { key = privateKey, header = {} } = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const h = Buffer.from(JSON.stringify({ alg: "RS256", kid: KID, typ: "JWT", ...header })).toString("base64url");
+  const p = Buffer.from(
+    JSON.stringify({ iss: ISS, aud: ["aud-test"], email: "admin@example.com", iat: now, nbf: now, exp: now + 600, ...claims })
+  ).toString("base64url");
+  const sig = crypto.sign("RSA-SHA256", Buffer.from(`${h}.${p}`), key).toString("base64url");
+  return `${h}.${p}.${sig}`;
+}
+const ADMIN = { "Cf-Access-Jwt-Assertion": makeToken() };
 let hub;
 let base;
 
@@ -57,9 +79,9 @@ const postMcp = (headers = {}) =>
     body: JSON.stringify(initBody),
   });
 
-async function mcpClient(key) {
+async function mcpClient(key, extraHeaders = {}) {
   const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
-    requestInit: { headers: { Authorization: `Bearer ${key}` } },
+    requestInit: { headers: { Authorization: `Bearer ${key}`, ...extraHeaders } },
   });
   const client = new Client({ name: "hub-test", version: "1.0.0" });
   await client.connect(transport);
@@ -79,7 +101,7 @@ before(async () => {
     path.join(dataDir, "keys.json"),
     JSON.stringify([{ name: "seed", sha256, mode: "read", created_at: new Date().toISOString(), last_used_at: null }])
   );
-  hub = await startHub({ firstProbeMs: 60 * 60 * 1000 });
+  hub = await startHub({ firstProbeMs: 60 * 60 * 1000, fetchJwks });
   base = `http://127.0.0.1:${hub.port}`;
 });
 
@@ -127,7 +149,7 @@ test("/mcp without a key or with a wrong key -> 401 with a generic body", async 
   assert.equal(b2, await r3.text());
 });
 
-test("after 10 wrong keys from one address -> 429, even with a valid key", async () => {
+test("after 10 wrong keys from one address -> 429 for wrong keys, but a valid key still gets through", async () => {
   const ip = { "CF-Connecting-IP": "203.0.113.50" };
   for (let i = 0; i < 10; i++) {
     const r = await postMcp({ ...ip, Authorization: `Bearer wrong-${i}` });
@@ -135,8 +157,14 @@ test("after 10 wrong keys from one address -> 429, even with a valid key", async
   }
   const r = await postMcp({ ...ip, Authorization: "Bearer wrong-11" });
   assert.equal(r.status, 429);
+  const missing = await postMcp(ip);
+  assert.equal(missing.status, 429, "a missing key from a blocked address is throttled too");
   const ok = await postMcp({ ...ip, Authorization: `Bearer ${SEED_KEY}` });
-  assert.equal(ok.status, 429);
+  assert.equal(ok.status, 200, "a valid key is never throttled");
+  await ok.text();
+  const client = await mcpClient(SEED_KEY, ip);
+  assert.equal((await client.listTools()).tools.length, 6, "tools/list works from the blocked address");
+  await client.close();
   // A different address is unaffected.
   const other = await postMcp({ "CF-Connecting-IP": "203.0.113.51", Authorization: `Bearer ${SEED_KEY}` });
   assert.equal(other.status, 200);
@@ -206,16 +234,15 @@ test("gmail_search: unserved account refused; served account without token is a 
   }
 });
 
-test("admin gate: 403 without the Access header or for an unlisted email", async () => {
+test("admin gate: 403 without an Access token; a valid token for a listed email -> 200", async () => {
   for (const p of ["/admin", "/", "/auth/aroncorp", "/approve/1", "/oauth2callback?code=x&state=y"]) {
     const r = await fetch(base + p, { redirect: "manual" });
     assert.equal(r.status, 403, p);
     assert.equal(await r.text(), "Forbidden");
   }
-  const other = await fetch(`${base}/admin`, { headers: { "Cf-Access-Authenticated-User-Email": "intruder@example.com" } });
-  assert.equal(other.status, 403);
-  const ok = await fetch(`${base}/admin`, { headers: { "Cf-Access-Authenticated-User-Email": "ADMIN@example.com" } });
+  const ok = await fetch(`${base}/admin`, { headers: { "Cf-Access-Jwt-Assertion": makeToken({ email: "ADMIN@example.com" }) } });
   assert.equal(ok.status, 200);
+  assert.ok(jwksFetches.length >= 1 && jwksFetches.every((u) => u === `${ISS}/cdn-cgi/access/certs`), "JWKS from the team domain");
   const html = await ok.text();
   assert.match(html, /Caller keys/);
   assert.ok(!html.includes(SEED_KEY), "admin page never shows a key");
@@ -319,4 +346,122 @@ test("stdio registration still registers all 9 tools", async () => {
   assert.deepEqual(all.find((t) => t.name === "gmail_search").inputSchema.properties.account.enum, accountKeys);
   const read = await listNames({ tools: READ_TOOLS, accountKeys: ["personal"] });
   assert.equal(read.length, 6);
+});
+
+test("admin gate rejects bad Access tokens and the bare email header", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const cases = {
+    "wrong aud": makeToken({ aud: ["aud-nope"] }),
+    "wrong aud (string)": makeToken({ aud: "aud-nope" }),
+    "wrong iss": makeToken({ iss: "https://evilteam.cloudflareaccess.com" }),
+    expired: makeToken({ exp: now - 120, iat: now - 900, nbf: now - 900 }),
+    "nbf in the future": makeToken({ nbf: now + 600 }),
+    "bad signature": makeToken({}, { key: otherPair.privateKey }),
+    "tampered payload": (() => {
+      const [h, , sig] = makeToken().split(".");
+      const p = Buffer.from(JSON.stringify({ iss: ISS, aud: ["aud-test"], email: "admin@example.com", exp: now + 600 })).toString("base64url");
+      return `${h}.${p}.${sig}`;
+    })(),
+    "alg none": makeToken({}, { header: { alg: "none" } }),
+    HS256: makeToken({}, { header: { alg: "HS256" } }),
+    "unknown kid": makeToken({}, { header: { kid: "other-kid" } }),
+    "unlisted email": makeToken({ email: "intruder@example.com" }),
+    "no email": makeToken({ email: undefined }),
+    garbage: "not.a.jwt",
+  };
+  for (const [name, token] of Object.entries(cases)) {
+    const r = await fetch(`${base}/admin`, { headers: { "Cf-Access-Jwt-Assertion": token } });
+    assert.equal(r.status, 403, name);
+    assert.equal(await r.text(), "Forbidden", `${name}: no reason in the response`);
+  }
+  const missing = await fetch(`${base}/admin`);
+  assert.equal(missing.status, 403, "missing token");
+  for (const email of ["admin@example.com", "ADMIN@example.com"]) {
+    const r = await fetch(`${base}/admin`, { headers: { "Cf-Access-Authenticated-User-Email": email } });
+    assert.equal(r.status, 403, "the bare email header is not trusted");
+  }
+  const cookie = await fetch(`${base}/admin`, { headers: { Cookie: `other=1; CF_Authorization=${makeToken()}` } });
+  assert.equal(cookie.status, 200, "CF_Authorization cookie is accepted as a fallback");
+});
+
+test("browser hardening headers on /admin (not on /health)", async () => {
+  const r = await fetch(`${base}/admin`, { headers: ADMIN });
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("x-frame-options"), "DENY");
+  assert.equal(r.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(r.headers.get("referrer-policy"), "no-referrer");
+  assert.equal(r.headers.get("cache-control"), "no-store");
+  assert.equal(
+    r.headers.get("content-security-policy"),
+    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+  );
+  const html = await r.text();
+  assert.ok(!/<script/i.test(html), "no scripts on the admin page");
+  assert.ok(html.includes('<form method="post" action="/admin/keys">'), "same-origin form action");
+  const denied = await fetch(`${base}/admin`);
+  assert.equal(denied.headers.get("x-frame-options"), "DENY", "403s carry the headers too");
+  const h = await fetch(`${base}/health`);
+  assert.equal(h.headers.get("content-security-policy"), null);
+});
+
+test("access verifier: JWKS fetch failure is a 403, unknown kid refetches at most once a minute", async () => {
+  const { createAccessVerifier } = await import("../src/accessJwt.js");
+  const failing = createAccessVerifier({
+    teamDomain: "testteam.cloudflareaccess.com",
+    auds: ["aud-test"],
+    adminEmails: ["admin@example.com"],
+    fetchJwks: async () => {
+      throw new Error("offline");
+    },
+  });
+  const r = await failing.verify(makeToken());
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /JWKS fetch failed/);
+
+  let clock = Date.now();
+  let calls = 0;
+  const v = createAccessVerifier({
+    teamDomain: "https://testteam.cloudflareaccess.com/",
+    auds: ["aud-test"],
+    adminEmails: ["admin@example.com"],
+    fetchJwks: async (url) => {
+      calls++;
+      return fetchJwks(url);
+    },
+    now: () => clock,
+  });
+  assert.equal((await v.verify(makeToken())).ok, true);
+  assert.equal(calls, 1);
+  assert.equal((await v.verify(makeToken())).ok, true);
+  assert.equal(calls, 1, "cached");
+  const unknown = makeToken({}, { header: { kid: "rotated" } });
+  assert.equal((await v.verify(unknown)).ok, false);
+  assert.equal((await v.verify(unknown)).ok, false);
+  assert.equal(calls, 1, "no refetch within a minute of the last fetch");
+  clock += 61 * 1000;
+  assert.equal((await v.verify(unknown)).ok, false);
+  assert.equal(calls, 2, "one refetch after a minute");
+  clock += 61 * 60 * 1000;
+  assert.equal((await v.verify(makeToken({ exp: Math.floor(clock / 1000) + 600 }))).ok, true);
+  assert.equal(calls, 3, "refetched after the 1 h cache expired");
+});
+
+test("unset HUB_ACCESS_TEAM_DOMAIN -> every admin-gated route answers 403", async () => {
+  const h2 = await startHub({
+    port: 0,
+    dataDir: path.join(tmp, "data-noaccess"),
+    accessTeamDomain: "",
+    fetchJwks,
+    firstProbeMs: 60 * 60 * 1000,
+  });
+  try {
+    const b2 = `http://127.0.0.1:${h2.port}`;
+    for (const p of ["/admin", "/", "/auth/aroncorp", "/approve/1"]) {
+      const r = await fetch(b2 + p, { headers: ADMIN, redirect: "manual" });
+      assert.equal(r.status, 403, p);
+    }
+    assert.equal((await fetch(`${b2}/health`)).status, 200);
+  } finally {
+    await h2.close();
+  }
 });

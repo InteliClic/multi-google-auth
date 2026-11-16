@@ -15,6 +15,8 @@ services:
       HUB_DATA_DIR: "/data"
       HUB_ACCOUNTS: "personal,personal-drive"
       HUB_ADMIN_EMAILS: "you@example.com"
+      HUB_ACCESS_TEAM_DOMAIN: "yourteam.cloudflareaccess.com"
+      HUB_ACCESS_AUD: "your-access-application-aud-tag"
       PUBLIC_URL: "https://hub.example.com"
     # GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (and any GOOGLE_CLIENT_ID_<KEY> pairs).
     # Keep this file out of git and readable only by its owner.

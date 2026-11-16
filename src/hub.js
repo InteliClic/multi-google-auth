@@ -15,6 +15,7 @@ import { mountAuthRoutes } from "./authServer.js";
 import { probe } from "./auth.js";
 import { hasToken } from "./tokenStore.js";
 import { esc, page } from "./html.js";
+import { createAccessVerifier, normalizeTeamDomain, tokenFromRequest } from "./accessJwt.js";
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
 
@@ -67,6 +68,9 @@ export function hubConfig(options = {}) {
     bind: options.bind ?? (env.HUB_BIND || "127.0.0.1"),
     adminEmails: (options.adminEmails ?? list(env.HUB_ADMIN_EMAILS)).map((e) => e.toLowerCase()),
     devNoAccess: options.devNoAccess ?? env.HUB_DEV_NO_ACCESS === "1",
+    accessTeamDomain: normalizeTeamDomain(options.accessTeamDomain ?? env.HUB_ACCESS_TEAM_DOMAIN),
+    accessAuds: options.accessAuds ? [...options.accessAuds] : list(env.HUB_ACCESS_AUD),
+    fetchJwks: options.fetchJwks,
     probeMinutes: Number(options.probeMinutes ?? (env.HUB_PROBE_MINUTES || 15)),
     firstProbeMs: Number(options.firstProbeMs ?? 5000),
     tokensDir: env.TOKENS_DIR ? null : path.join(dataDir, "tokens"),
@@ -242,22 +246,25 @@ export async function startHub(options = {}) {
   const rpcError = (res, status, code, message, headers = {}) => {
     res.status(status).set(headers).json({ jsonrpc: "2.0", error: { code, message }, id: null });
   };
+  // The key is checked FIRST: a valid key always proceeds, even from a blocked address,
+  // because real callers share a few provider addresses and a stranger's bad guesses
+  // must never lock the owner out. Only a missing or wrong key meets the throttle.
   app.use("/mcp", (req, res, next) => {
+    const auth = req.get("authorization") || "";
+    const m = /^Bearer\s+(.+)$/i.exec(auth);
+    const presented = (m ? m[1] : req.get("x-hub-key") || "").trim();
+    const key = findKey(presented);
+    if (key) {
+      req.hubKey = key;
+      return next();
+    }
     const now = Date.now();
     const ip = clientIp(req);
     if (isBlocked(ip, now)) {
       return rpcError(res, 429, -32029, "Too many requests", { "Retry-After": String(BLOCK_MS / 1000) });
     }
-    const auth = req.get("authorization") || "";
-    const m = /^Bearer\s+(.+)$/i.exec(auth);
-    const presented = (m ? m[1] : req.get("x-hub-key") || "").trim();
-    const key = findKey(presented);
-    if (!key) {
-      noteFailure(ip, now);
-      return rpcError(res, 401, -32001, "Unauthorized", { "WWW-Authenticate": "Bearer" });
-    }
-    req.hubKey = key;
-    next();
+    noteFailure(ip, now);
+    return rpcError(res, 401, -32001, "Unauthorized", { "WWW-Authenticate": "Bearer" });
   });
   app.post("/mcp", express.json({ limit: "1mb" }), async (req, res) => {
     const keyName = req.hubKey.name;
@@ -304,16 +311,52 @@ export async function startHub(options = {}) {
     return rpcError(res, 400, -32700, "Parse error");
   });
 
-  // ---- admin gate: everything below needs a Cloudflare Access identity ----
-  // SLICE 2 replaces this header check with verification of the Cf-Access-Jwt-Assertion
-  // token (signature against the team's Access certs, audience, expiry). Until then the
-  // header is trusted because the service binds to localhost and is reachable only
-  // through the tunnel, where Cloudflare Access sets it.
+  // ---- browser hardening on every route below (not /mcp, not /health) ----
+  app.use((_req, res, next) => {
+    res.set({
+      "X-Frame-Options": "DENY",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "Cache-Control": "no-store",
+      "Content-Security-Policy":
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    });
+    next();
+  });
+
+  // ---- admin gate: everything below needs a verified Cloudflare Access identity ----
+  // The Cf-Access-Jwt-Assertion token (or CF_Authorization cookie) is verified against
+  // the team's Access certs: RS256 signature, iss, aud, exp/nbf/iat, and an email in
+  // HUB_ADMIN_EMAILS. The plain Cf-Access-Authenticated-User-Email header is NOT trusted.
+  // HUB_DEV_NO_ACCESS=1 is the only bypass. Reasons for a 403 go to stderr only.
+  const accessConfigured = !!(cfg.accessTeamDomain && cfg.accessAuds.length);
+  const verifier = accessConfigured
+    ? createAccessVerifier({
+        teamDomain: cfg.accessTeamDomain,
+        auds: cfg.accessAuds,
+        adminEmails: cfg.adminEmails,
+        ...(cfg.fetchJwks ? { fetchJwks: cfg.fetchJwks } : {}),
+      })
+    : null;
+  const forbid = (req, res, reason) => {
+    console.error(`[hub] admin gate 403 ${req.method} ${req.path}: ${reason}`);
+    res.status(403).type("text/plain").send("Forbidden");
+  };
   app.use((req, res, next) => {
     if (cfg.devNoAccess) return next();
-    const email = String(req.get("cf-access-authenticated-user-email") || "").trim().toLowerCase();
-    if (email && cfg.adminEmails.includes(email)) return next();
-    res.status(403).type("text/plain").send("Forbidden");
+    if (!verifier) return forbid(req, res, "Access verification not configured");
+    verifier
+      .verify(tokenFromRequest(req))
+      .catch((e) => ({ ok: false, reason: e?.message || String(e) }))
+      .then((r) => {
+        if (!r.ok) return forbid(req, res, r.reason);
+        req.adminEmail = r.email;
+        try {
+          next();
+        } catch (e) {
+          next(e);
+        }
+      });
   });
 
   mountAuthRoutes(app, {
@@ -451,8 +494,13 @@ export async function startHub(options = {}) {
     console.error("[hub] Anyone who can reach this port can open /admin and mint keys.");
     console.error("[hub] Local testing only. Never run it like this behind the tunnel.");
     console.error("[hub] ************************************************************");
+  } else if (!accessConfigured) {
+    const missing = [!cfg.accessTeamDomain && "HUB_ACCESS_TEAM_DOMAIN", !cfg.accessAuds.length && "HUB_ACCESS_AUD"].filter(Boolean);
+    console.error(`[hub] ${missing.join(" and ")} not set: Access tokens cannot be verified, so admin and sign-in pages answer 403.`);
   } else if (!cfg.adminEmails.length) {
     console.error("[hub] HUB_ADMIN_EMAILS is not set: admin and sign-in pages answer 403.");
+  } else {
+    console.error(`[hub] admin gate: Cloudflare Access tokens from ${cfg.accessTeamDomain} (aud: ${cfg.accessAuds.length} tag(s))`);
   }
 
   let closed = false;

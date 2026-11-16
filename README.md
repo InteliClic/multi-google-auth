@@ -271,8 +271,10 @@ Cloudflare Access guards the admin pages. It does not start the stdio MCP. The s
   `data/log/calls.jsonl` (key name, tool, account, a short argument summary, result, time).
 - `GET /admin`: account status with sign-in links, caller keys, the last 30 calls, and a form
   to create a key. `GET /`, `/auth/<key>`, `/oauth2callback`: the usual sign-in pages.
-  All of these need the `Cf-Access-Authenticated-User-Email` header (set by Cloudflare Access)
-  to be one of `HUB_ADMIN_EMAILS`; otherwise 403.
+  All of these need a valid Cloudflare Access token (`Cf-Access-Jwt-Assertion` header or
+  `CF_Authorization` cookie): RS256-signed by your team's Access keys, the right issuer and
+  AUD, not expired, for an email in `HUB_ADMIN_EMAILS`. Anything else gets 403. The plain
+  email header is not trusted. These pages are sent with no-store, no-framing and a strict CSP.
 - `GET /approve/<id>`: placeholder, answers 501.
 
 **Variables** (see `.env.example`)
@@ -281,6 +283,8 @@ Cloudflare Access guards the admin pages. It does not start the stdio MCP. The s
 |---|---|---|
 | `HUB_ACCOUNTS` | (required) | Comma-separated `accounts.json` keys this hub serves |
 | `HUB_ADMIN_EMAILS` | (none: admin pages 403) | Emails allowed on the admin and sign-in pages |
+| `HUB_ACCESS_TEAM_DOMAIN` | (none: admin pages 403) | Your Access team domain, e.g. `yourteam.cloudflareaccess.com` |
+| `HUB_ACCESS_AUD` | (none: admin pages 403) | The Access application's AUD tag (comma-separated for several) |
 | `HUB_PORT` / `HUB_BIND` | `8790` / `127.0.0.1` | Where it listens. Keep it on localhost |
 | `HUB_DATA_DIR` | `./data` | `keys.json`, `log/`, and `tokens/` when `TOKENS_DIR` is unset |
 | `HUB_PROBE_MINUTES` | `15` | Minutes between token health probes |
@@ -300,8 +304,6 @@ and `accounts.json` as bind mounts. The data folder must be writable by uid 1000
 
 - No write tools over HTTP: drafts, calendar events and Assistant commands stay stdio-only until
   a write-approval flow (`/approve/<id>`) exists.
-- The admin gate trusts the Access email header; verifying the signed `Cf-Access-Jwt-Assertion`
-  token comes next. Until then the hub must be reachable only through the tunnel.
 
 ## Security
 
