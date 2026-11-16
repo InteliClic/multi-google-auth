@@ -6,11 +6,13 @@
   "bin": { "multi-google-auth": "src/index.js" },
   "scripts": {
     "start": "node src/index.js",
-    "auth": "node src/index.js --auth-only"
+    "auth": "node src/index.js --auth-only",
+    "hub": "node src/index.js --http",
+    "test": "node --test"
   },
   "engines": { "node": ">=18" },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "googleapis": "^144.0.0",

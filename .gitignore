@@ -3,3 +3,4 @@ tokens/
 .env
 *.log
 .DS_Store
+data/
