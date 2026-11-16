@@ -1,0 +1,41 @@
+# Example compose file for running the hub on a NAS behind a Cloudflare Tunnel.
+# Copy it next to a checkout, adjust the placeholders, then: docker compose up -d --build
+# The service listens on 127.0.0.1 only; cloudflared on the same host forwards to it.
+services:
+  google-hub:
+    build:
+      context: ..
+    image: multi-google-auth-hub:local
+    container_name: google-hub
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      HUB_BIND: "127.0.0.1"
+      HUB_PORT: "8790"
+      HUB_DATA_DIR: "/data"
+      HUB_ACCOUNTS: "personal,personal-drive"
+      HUB_ADMIN_EMAILS: "you@example.com"
+      PUBLIC_URL: "https://hub.example.com"
+    # GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (and any GOOGLE_CLIENT_ID_<KEY> pairs).
+    # Keep this file out of git and readable only by its owner.
+    env_file:
+      - ./google-hub.env
+    volumes:
+      - type: bind
+        source: /volume2/hot/google-hub/data
+        target: /data
+      - type: bind
+        source: ./accounts.json
+        target: /app/accounts.json
+        read_only: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8790/health').then(r=>{process.exitCode=r.ok?0:1}).catch(()=>{process.exitCode=1})"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

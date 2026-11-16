@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+tokens
+data
+.git
+.gitignore
+node_modules
+test
+.claude
+deploy
+*.log

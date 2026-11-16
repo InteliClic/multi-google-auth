@@ -251,6 +251,58 @@ Run it on a small always-on box instead of your laptop:
 - Run two roles from one install if you like: the MCP over stdio, and a long-running
   `--auth-only` instance for the web auth pages.
 
+## Run as an always-on hub (HTTP)
+
+`node src/index.js --http` (or `npm run hub`) runs the connector as a web service, so a remote
+MCP client such as a Claude custom connector can call it over HTTPS. It speaks plain HTTP on
+`127.0.0.1`; a Cloudflare Tunnel on the same host terminates TLS and forwards to it, and
+Cloudflare Access guards the admin pages. It does not start the stdio MCP. The stdio and
+`--auth-only` modes are unchanged.
+
+**Routes**
+
+- `GET /health`: no auth. `{ ok, version, accounts, live, last_probe_at }`, nothing secret. The
+  token probe runs on a timer, never per request.
+- `POST /mcp`: MCP over Streamable HTTP, stateless. Needs a caller key, as
+  `Authorization: Bearer <key>` or `X-Hub-Key: <key>`. Wrong or missing key: 401. Ten failures
+  from one address in 10 minutes: 429 for 10 minutes. Exposes only the six **read** tools
+  (`list_accounts`, `gmail_search`, `gmail_get_thread`, `calendar_list_events`, `drive_search`,
+  `drive_read_file`), for the accounts in `HUB_ACCOUNTS` only. Every call is logged to
+  `data/log/calls.jsonl` (key name, tool, account, a short argument summary, result, time).
+- `GET /admin`: account status with sign-in links, caller keys, the last 30 calls, and a form
+  to create a key. `GET /`, `/auth/<key>`, `/oauth2callback`: the usual sign-in pages.
+  All of these need the `Cf-Access-Authenticated-User-Email` header (set by Cloudflare Access)
+  to be one of `HUB_ADMIN_EMAILS`; otherwise 403.
+- `GET /approve/<id>`: placeholder, answers 501.
+
+**Variables** (see `.env.example`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `HUB_ACCOUNTS` | (required) | Comma-separated `accounts.json` keys this hub serves |
+| `HUB_ADMIN_EMAILS` | (none: admin pages 403) | Emails allowed on the admin and sign-in pages |
+| `HUB_PORT` / `HUB_BIND` | `8790` / `127.0.0.1` | Where it listens. Keep it on localhost |
+| `HUB_DATA_DIR` | `./data` | `keys.json`, `log/`, and `tokens/` when `TOKENS_DIR` is unset |
+| `HUB_PROBE_MINUTES` | `15` | Minutes between token health probes |
+| `PUBLIC_URL` | | The public https address; the OAuth redirect is `<PUBLIC_URL>/oauth2callback` |
+| `HUB_DEV_NO_ACCESS` | off | `1` turns the admin gate off. Local testing only |
+
+**Create a caller key:** open `<PUBLIC_URL>/admin` (through Cloudflare Access), enter a name
+(letters, digits, `-`, `_`), keep mode `read`, and press Create. The page shows the key once,
+as the exact line to paste into the client: `Authorization: Bearer <key>`. The hub stores only
+the key's SHA-256, so a lost key cannot be shown again: revoke it and create a new one.
+
+**Docker:** `Dockerfile` builds the hub image (runs as the `node` user);
+`deploy/docker-compose.example.yml` runs it on a NAS with host networking, the data folder
+and `accounts.json` as bind mounts. The data folder must be writable by uid 1000.
+
+**Not built yet**
+
+- No write tools over HTTP: drafts, calendar events and Assistant commands stay stdio-only until
+  a write-approval flow (`/approve/<id>`) exists.
+- The admin gate trusts the Access email header; verifying the signed `Cf-Access-Jwt-Assertion`
+  token comes next. Until then the hub must be reachable only through the tunnel.
+
 ## Security
 
 - **Never commit secrets.** `.env` and `tokens/` are gitignored. `accounts.json` holds only
