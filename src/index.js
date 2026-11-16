@@ -8,9 +8,30 @@ import { startMcp } from "./mcp.js";
 // so ALL logging must go to stderr (console.error). Never console.log here.
 
 const authOnly = process.argv.includes("--auth-only");
+const httpHub = process.argv.includes("--http");
 const disableAuthServer = process.env.DISABLE_AUTH_SERVER === "1";
 
+// --http: the always-on hub (read-only MCP over Streamable HTTP + admin pages).
+// No stdio MCP and no separate auth server in this mode.
+async function hub() {
+  requireConfig();
+  const { startHub } = await import("./hub.js");
+  const h = await startHub();
+  let stopping = false;
+  const stop = (sig) => {
+    if (stopping) return;
+    stopping = true;
+    console.error(`[hub] ${sig}: shutting down`);
+    h.close().then(() => {
+      process.exitCode = 0;
+    });
+  };
+  process.on("SIGINT", () => stop("SIGINT"));
+  process.on("SIGTERM", () => stop("SIGTERM"));
+}
+
 async function main() {
+  if (httpHub) return hub();
   requireConfig();
   if (!disableAuthServer) {
     try {
