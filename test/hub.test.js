@@ -327,7 +327,7 @@ test("OAuth: state carries a nonce, include_granted_scopes=false, redirect from 
   assert.match(authLog, /"error":"access_denied"/);
 });
 
-test("stdio registration still registers all 9 tools", async () => {
+test("stdio registration still registers all 10 tools", async () => {
   const listNames = async (opts) => {
     const server = new McpServer({ name: "t", version: "1" });
     registerTools(server, opts);
@@ -340,7 +340,7 @@ test("stdio registration still registers all 9 tools", async () => {
     return tools;
   };
   const all = await listNames();
-  assert.equal(all.length, 9);
+  assert.equal(all.length, 10);
   assert.deepEqual(all.map((t) => t.name).sort(), [...ALL_TOOLS].sort());
   const accountKeys = JSON.parse(fs.readFileSync(new URL("../accounts.json", import.meta.url), "utf8")).map((a) => a.key);
   assert.deepEqual(all.find((t) => t.name === "gmail_search").inputSchema.properties.account.enum, accountKeys);
