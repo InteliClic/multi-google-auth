@@ -19,7 +19,7 @@ export function capBytes(max_mb) {
   return Math.floor(mb * MB);
 }
 
-// Gmail ids are hex (thread 1a1ea621ed39c757). Anything else is refused before it
+// Gmail ids are hex (thread 19c2a4f0b7d3e615). Anything else is refused before it
 // reaches an IMAP search or an API URL.
 export function hexId(value, what) {
   const s = String(value ?? "").trim().toLowerCase();

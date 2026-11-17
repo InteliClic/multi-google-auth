@@ -37,7 +37,7 @@ let n = 0;
 const freshDir = () => A.outputDir(path.join(tmp, `out-${++n}`));
 
 test("safeName keeps only a harmless file name", () => {
-  assert.equal(A.safeName("365295 - ARON.pdf"), "365295 - ARON.pdf");
+  assert.equal(A.safeName("Service quote 2026.pdf"), "Service quote 2026.pdf");
   assert.equal(A.safeName("..\\..\\Windows\\System32\\evil.pdf"), "evil.pdf");
   assert.equal(A.safeName("../../etc/passwd"), "passwd");
   assert.equal(A.safeName("C:\\Users\\x\\a.pdf"), "a.pdf");
@@ -85,8 +85,8 @@ test("capBytes: 25 MB by default, never above 50 MB", () => {
 });
 
 test("hexId refuses anything that is not a Gmail id", () => {
-  assert.equal(A.hexId("1A1EA621ED39C757", "thread_id"), "1a1ea621ed39c757");
-  for (const bad of ["", "xyz", "1a1e/../2", "1a1ea621ed39c7570", "1 OR 1"]) assert.throws(() => A.hexId(bad, "thread_id"), /hex/);
+  assert.equal(A.hexId("19C2A4F0B7D3E615", "thread_id"), "19c2a4f0b7d3e615");
+  for (const bad of ["", "xyz", "1a1e/../2", "19c2a4f0b7d3e6150", "1 OR 1"]) assert.throws(() => A.hexId(bad, "thread_id"), /hex/);
 });
 
 test("outputDir: absolute, outside the connector's folder, created", () => {
@@ -167,7 +167,7 @@ const STRUCTURE = {
         },
       ],
     },
-    { part: "2", type: "application/pdf", disposition: "attachment", dispositionParameters: { filename: "365295 - ARON.pdf" }, id: "<f_abc>", encoding: "base64", size: 7800 },
+    { part: "2", type: "application/pdf", disposition: "attachment", dispositionParameters: { filename: "Service quote 2026.pdf" }, id: "<f_abc>", encoding: "base64", size: 7800 },
     { part: "3", type: "application/pdf", encoding: "base64", size: 78 },
     {
       part: "4",
@@ -186,7 +186,7 @@ test("fileParts (IMAP) lists files, not message text, and does not open attached
     parts.map((p) => [p.part, p.filename, p.mime_type, p.inline]),
     [
       ["1.2.2", "logo.png", "image/png", true],
-      ["2", "365295 - ARON.pdf", "application/pdf", false], // a Content-ID on a real attachment is not "inline"
+      ["2", "Service quote 2026.pdf", "application/pdf", false], // a Content-ID on a real attachment is not "inline"
       ["3", null, "application/pdf", false],
       ["4", null, "message/rfc822", false],
       ["5", "rows.csv", "text/csv", false],
