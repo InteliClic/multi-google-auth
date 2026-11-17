@@ -33,6 +33,7 @@ just "a token file exists."
 | `list_accounts` | Lists accounts and **probes** each token: `live` vs `broken` vs `not connected`, with `authorized_at` (the last consent). |
 | `gmail_search` | Search threads with Gmail query syntax (`from:`, `newer_than:7d`, `has:attachment`…). |
 | `gmail_get_thread` | Full thread with decoded plain-text bodies. |
+| `gmail_get_attachments` | Lists a thread's or a message's attachments (name, MIME type, size) and, given `output_dir`, saves them to that folder. See *Attachments* below. |
 | `gmail_create_draft` | Creates a **draft only** — it never sends. |
 | `calendar_list_events` | Upcoming events for an account/calendar. |
 | `calendar_create_event` | Create an event (timed or all-day). |
@@ -43,6 +44,46 @@ just "a token file exists."
 All tools take an `account` argument — one of the keys in `accounts.json`
 (`aroncorp`, `inteliclic`, `personal`, `personal-drive`, `assistant`, `printer`, `logicall`). A tool asked of a key
 without that API says which key has it.
+
+### Attachments (`gmail_get_attachments`)
+
+`gmail_get_thread` returns message text only. This tool returns the files: a quote, an invoice
+or a statement sent as a PDF. It works on both Gmail paths (IMAP for a key with an app
+password, the Gmail API for the others) and only reads the mailbox: over IMAP the mailbox is
+opened read-only, so nothing is marked as read.
+
+| Argument | Meaning |
+|---|---|
+| `account` | The account key. |
+| `thread_id` or `message_id` | One of the two, as `gmail_search` and `gmail_get_thread` return them. A thread lists the attachments of every message in it. |
+| `output_dir` | Absolute folder to save into, created if missing. Left out: list only, nothing is fetched. |
+| `attachment` | Save only this one: its `id` from the listing, or its exact file name. Left out: every attachment except inline images in the body (signature logos), which are listed as `inline` and saved only when named here. |
+| `max_mb` | Largest file to save. Default 25, at most 50. A larger one is reported as `skipped`. |
+
+Each attachment comes back with `id`, `message_id`, `from`, `date`, `filename`, `mime_type` and
+`size` (over IMAP an estimate until the file is saved, marked `size_is_estimate`). A saved one
+adds `saved`: `path`, `bytes`, `sha256` and `detected_type`. `saved_count` says how many files
+were written; a file that could not be fetched carries `error` and the others are still saved.
+
+**A saved file is untrusted data from whoever sent the email.** The tool writes bytes and
+nothing else. It never opens, parses or runs a file.
+
+- **Names are rebuilt.** Only the last path piece is kept; control characters, right-to-left
+  overrides, characters Windows refuses and device names (`NUL`, `COM1`) are removed or
+  replaced; the length is capped. A name Windows would run, install or mount (`.exe`, `.js`,
+  `.lnk`, `.msi`, `.iso` and the like) gets `.untrusted` added.
+- **The type is read from the file's first bytes**, not from the name or the MIME type the
+  sender declared. `detected_type` reports it, and `warning` says when the content is a program
+  or a script, or does not match the name (a `.pdf` that is HTML).
+- **Nothing is overwritten.** A taken name gets ` (1)`, ` (2)`. If the file already there is
+  byte-for-byte the same, it is reported with `already_there` and no copy is written.
+- **`output_dir` cannot be inside this connector's folder**, so nothing from an email lands
+  beside `.env`, `tokens/` or the code.
+- On Windows the file is marked as downloaded from the internet (`Zone.Identifier`), as a
+  browser marks a download, where the file system keeps that mark.
+
+The tool is on the stdio server only. Hub mode (`--http`) does not expose it: it writes to the
+disk of the machine the server runs on.
 
 ## Prerequisites
 
@@ -136,7 +177,7 @@ accounts*), so that only Calendar needs the weekly click:
 A consumer account's **Gmail** can skip OAuth entirely. Turn on 2-Step Verification for it,
 create an app password at <https://myaccount.google.com/apppasswords>, and put it in `.env` as
 `GMAIL_APP_PASSWORD_<KEY>` (spaces as Google shows them are fine). That account's
-`gmail_search`, `gmail_get_thread` and `gmail_create_draft` then go over IMAP
+`gmail_search`, `gmail_get_thread`, `gmail_get_attachments` and `gmail_create_draft` then go over IMAP
 (`imap.gmail.com`, Gmail's own search syntax via `X-GM-RAW`) and return the same thread and
 message ids as the API. An app password lasts until it is deleted or the Google password
 changes. `list_accounts` reports `gmail: "imap"` and probes that login as `gmail_live`.
@@ -313,6 +354,8 @@ and `accounts.json` as bind mounts. The data folder must be writable by uid 1000
   calls send), Calendar is read/write, Drive is **read-only**.
 - `gmail_create_draft` and `calendar_create_event` are the only write actions; drafts are
   never sent automatically.
+- `gmail_get_attachments` writes nothing to Google. It writes files to a local folder the
+  caller names, and treats them as untrusted data (see *Attachments*).
 
 ## Troubleshooting
 

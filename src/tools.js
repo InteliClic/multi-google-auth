@@ -2,7 +2,8 @@ import { gmailFor, calendarFor, driveFor } from "./google.js";
 import { loadAccounts, clientFor, suffixOf, scopesFor } from "./config.js";
 import { hasToken, loadToken } from "./tokenStore.js";
 import { probe } from "./auth.js";
-import { imapPasswordFor, imapProbe, imapSearch, imapGetThread, imapCreateDraft } from "./gmailImap.js";
+import { imapPasswordFor, imapProbe, imapSearch, imapGetThread, imapCreateDraft, imapAttachments } from "./gmailImap.js";
+import { capBytes, hexId, outputDir, describePart, deliver } from "./attachments.js";
 import { assistantText } from "./assistant.js";
 
 export const accounts = loadAccounts();
@@ -142,6 +143,69 @@ export async function gmailGetThread({ account, thread_id }) {
     };
   });
   return { thread_id, message_count: messages.length, messages };
+}
+
+// The files of one API message: every part that is a file, an attached email
+// (message/rfc822) as one file without opening it up.
+export function apiFileParts(message) {
+  const h = message.payload?.headers;
+  const out = [];
+  (function walk(p) {
+    if (!p) return;
+    if (p.parts?.length && p.mimeType !== "message/rfc822") return p.parts.forEach(walk);
+    const file = describePart({
+      type: p.mimeType,
+      disposition: (header(p.headers, "Content-Disposition") || "").split(";")[0].trim(),
+      filename: p.filename,
+      contentId: header(p.headers, "Content-ID"),
+    });
+    if (!file) return;
+    const part = p.partId || "0";
+    out.push({
+      ...file,
+      id: `${message.id}/${part}`,
+      message_id: message.id,
+      from: header(h, "From"),
+      date: header(h, "Date"),
+      size: p.body?.size ?? 0,
+      size_exact: true,
+      attachment_id: p.body?.attachmentId || null,
+      data: p.body?.attachmentId ? null : p.body?.data || "",
+    });
+  })(message.payload);
+  return out;
+}
+
+async function apiAttachments(account, { thread_id, message_id }, use) {
+  const gmail = gmailFor(account);
+  const messages = thread_id
+    ? (await gmail.users.threads.get({ userId: "me", id: thread_id, format: "full" })).data.messages || []
+    : [(await gmail.users.messages.get({ userId: "me", id: message_id, format: "full" })).data];
+  const items = messages.flatMap(apiFileParts);
+  // The API hands a part over whole, already decoded; the size it declared was checked
+  // against the limit before this is called.
+  const bytesOf = async (item) => {
+    if (!item.attachment_id) return Buffer.from(item.data, "base64url");
+    const res = await gmail.users.messages.attachments.get({
+      userId: "me",
+      messageId: item.message_id,
+      id: item.attachment_id,
+    });
+    return Buffer.from(res.data.data || "", "base64url");
+  };
+  return use({ message_count: messages.length, items, bytesOf });
+}
+
+// List a thread's or a message's attachments and, when output_dir is given, save them
+// there. Reads the mailbox only. What it saves is untrusted data (see attachments.js).
+export async function gmailGetAttachments({ account, thread_id, message_id, output_dir, attachment, max_mb }) {
+  const a = accountOr400(account);
+  if (!thread_id === !message_id) throw new Error("Give thread_id or message_id (one of them)");
+  const ref = thread_id ? { thread_id: hexId(thread_id, "thread_id") } : { message_id: hexId(message_id, "message_id") };
+  if (attachment && !output_dir) throw new Error("`attachment` picks what to save: give output_dir too, or leave both out to list");
+  const opts = { dir: output_dir ? outputDir(output_dir) : null, only: attachment || null, maxBytes: capBytes(max_mb) };
+  const use = async (found) => ({ ...ref, ...(await deliver(found, opts)) });
+  return imapPasswordFor(account) ? imapAttachments(a, ref, use) : apiAttachments(account, ref, use);
 }
 
 export async function gmailCreateDraft({ account, to, subject, body, cc, bcc, thread_id }) {

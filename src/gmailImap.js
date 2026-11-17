@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { ImapFlow } from "imapflow";
 import { suffixOf } from "./config.js";
+import { describePart } from "./attachments.js";
 
 // Gmail over IMAP with an app password, for an account whose OAuth client cannot
 // stay authorized: a consumer @gmail.com account may only grant the Gmail scopes
@@ -158,6 +159,78 @@ export async function imapGetThread(account, thread_id) {
         });
       }
       return { thread_id, message_count: messages.length, messages, via: "imap" };
+    })
+  );
+}
+
+// Every file a message carries, from its BODYSTRUCTURE. An attached email
+// (message/rfc822) is one file and is not opened up.
+export function fileParts(node, out = []) {
+  if (!node) return out;
+  if (node.childNodes?.length && node.type !== "message/rfc822") {
+    for (const c of node.childNodes) fileParts(c, out);
+    return out;
+  }
+  const file = describePart({
+    type: node.type,
+    disposition: node.disposition,
+    filename: node.dispositionParameters?.filename || node.parameters?.name,
+    contentId: node.id,
+  });
+  if (!file) return out;
+  // BODYSTRUCTURE gives the size as sent, still base64 for most files: about 57 bytes
+  // of file per 78 sent. The exact size is known once the part has been read.
+  const sent = Number(node.size) || 0;
+  const base64 = String(node.encoding || "").toLowerCase() === "base64";
+  out.push({
+    ...file,
+    part: node.part || "1",
+    size: base64 ? Math.round((sent * 57) / 78) : sent,
+    size_floor: base64 ? Math.floor(sent * 0.7) : sent,
+    size_exact: !base64,
+  });
+  return out;
+}
+
+// The attachments of a thread or of one message. `use` gets { message_count, items,
+// bytesOf } while the connection is open and returns the tool result. The mailbox is
+// opened read-only and parts are fetched with BODY.PEEK, so nothing is marked as read.
+export async function imapAttachments(account, { thread_id, message_id }, use) {
+  return withClient(account, (client) =>
+    inAllMail(client, async () => {
+      const query = thread_id ? { threadId: toDec(thread_id) } : { emailId: toDec(message_id) };
+      const uids = (await client.search(query, { uid: true })) || [];
+      if (!uids.length) throw new Error(`No ${thread_id ? `thread ${thread_id}` : `message ${message_id}`} on ${account.email}`);
+      const items = [];
+      for (const uid of uids) {
+        const m = await client.fetchOne(String(uid), { envelope: true, bodyStructure: true }, { uid: true });
+        const mid = m.emailId ? toHex(m.emailId) : String(uid);
+        for (const f of fileParts(m.bodyStructure)) {
+          items.push({
+            ...f,
+            id: `${mid}/${f.part}`,
+            message_id: mid,
+            uid,
+            from: addrs(m.envelope?.from),
+            date: when(m.envelope?.date),
+          });
+        }
+      }
+      // download() removes the transfer encoding; decodeText: false keeps a text file's
+      // bytes as sent. One byte past the limit is enough to know it is over.
+      const bytesOf = async (item, limit) => {
+        const { content } = await client.download(String(item.uid), item.part, {
+          uid: true,
+          maxBytes: limit + 1,
+          decodeText: false,
+          chunkSize: 1024 * 1024,
+        });
+        if (!content) throw new Error(`Part ${item.part} of message ${item.message_id} was not returned`);
+        const chunks = [];
+        for await (const c of content) chunks.push(c);
+        return Buffer.concat(chunks);
+      };
+      return { ...(await use({ message_count: uids.length, items, bytesOf })), via: "imap" };
     })
   );
 }
